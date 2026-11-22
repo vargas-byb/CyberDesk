@@ -27,6 +27,7 @@ enum Cat {
     Modulo,
     Energia,
     Pcb,
+    Comp,
 }
 
 impl Cat {
@@ -38,6 +39,7 @@ impl Cat {
             Cat::Modulo => "MÓDULO",
             Cat::Energia => "ENERGIA",
             Cat::Pcb => "PCB",
+            Cat::Comp => "COMPONENTES",
         }
     }
 }
@@ -306,6 +308,69 @@ const ITEMS: &[Item] = &[
         icon: Icon::Pcb,
         chip: "Projeto em KiCad · fabricação sob encomenda",
         desc: "Placa feita sob medida, com trilhas, vias e serigrafia próprias. Ideal para transformar seu protótipo em um produto de verdade.",
+    },
+    Item {
+        name: "Teclado Membrana 4x3",
+        cat: Cat::Modulo,
+        icon: Icon::Pcb,
+        chip: "Matriz 4x3 · 12 teclas · 7 pinos",
+        desc: "Teclado matricial flexível e autoadesivo com 12 teclas (0 a 9, * e #). Ocupa pouco espaço e é ótimo para senhas, travas e menus em projetos com ESP32 ou Arduino.",
+    },
+    Item {
+        name: "WiFi LoRa 32 V3 (ESP32-S3)",
+        cat: Cat::Esp32,
+        icon: Icon::Oled,
+        chip: "ESP32-S3 + LoRa SX1262 · OLED 0,96\" · USB-C",
+        desc: "Placa com ESP32-S3, rádio LoRa de longo alcance, Wi-Fi, Bluetooth LE, display OLED e conector de bateria. Vem com antena e pinos para soldar; ótima para redes de sensores e comunicação sem internet.",
+    },
+    Item {
+        name: "Módulo Micro SD (TF Card)",
+        cat: Cat::Modulo,
+        icon: Icon::Pcb,
+        chip: "Interface SPI · cartão microSD / TF",
+        desc: "Adaptador para ler e gravar cartões microSD via SPI. Serve para guardar logs, capturas e arquivos em projetos de ESP32 e Arduino.",
+    },
+    Item {
+        name: "Sensor de Chuva",
+        cat: Cat::Modulo,
+        icon: Icon::Pcb,
+        chip: "Placa de gotas + módulo comparador · saída analógica e digital",
+        desc: "Detecta gotas de água na placa de trilhas e entrega o sinal pelo módulo, com ajuste de sensibilidade por trimpot. Usado em estações meteorológicas e automações contra chuva.",
+    },
+    Item {
+        name: "Módulo nRF24L01 com Antena",
+        cat: Cat::Modulo,
+        icon: Icon::Pcb,
+        chip: "nRF24L01 · 2,4 GHz · SPI · antena SMA",
+        desc: "Rádio de 2,4 GHz para comunicação sem fio entre placas, com antena externa para ganhar alcance (o anúncio indica até 1000 m em campo aberto). Muito usado em controles remotos e redes de sensores.",
+    },
+    Item {
+        name: "Kit Resistor 10k 1/4W",
+        cat: Cat::Comp,
+        icon: Icon::Perf,
+        chip: "10 kΩ · 1/4 W · 5% · carbono",
+        desc: "Kit de 200 resistores de carbono de 10 kΩ. É o valor clássico para pull-up e pull-down em botões e entradas digitais.",
+    },
+    Item {
+        name: "Jumpers Rígidos Coloridos",
+        cat: Cat::Comp,
+        icon: Icon::Perf,
+        chip: "Kit com caixa organizadora · para protoboard",
+        desc: "Fios rígidos pré-cortados em vários comprimentos e cores, já dobrados para a protoboard. Deixam a montagem limpa e fácil de revisar.",
+    },
+    Item {
+        name: "Protoboard 400 Pontos",
+        cat: Cat::Comp,
+        icon: Icon::Perf,
+        chip: "400 furos · 8,5 x 5,5 cm",
+        desc: "Placa de ensaio compacta para montar circuitos sem solda. Boa para testes rápidos com ESP32, sensores e módulos.",
+    },
+    Item {
+        name: "Protoboard 830 Pontos",
+        cat: Cat::Comp,
+        icon: Icon::Perf,
+        chip: "830 furos · trilhas de alimentação duplas",
+        desc: "Protoboard grande para circuitos maiores, com trilhas de alimentação dos dois lados. Cabe uma placa de desenvolvimento e vários módulos juntos.",
     },
 ];
 
@@ -724,6 +789,15 @@ fn chip(ui: &mut egui::Ui, label: &str, selected: bool) -> bool {
 fn slug(name: &str) -> String {
     let mut s = String::new();
     for ch in name.chars() {
+        let ch = match ch.to_lowercase().next().unwrap_or(ch) {
+            'á' | 'à' | 'â' | 'ã' => 'a',
+            'é' | 'ê' => 'e',
+            'í' => 'i',
+            'ó' | 'ô' | 'õ' => 'o',
+            'ú' => 'u',
+            'ç' => 'c',
+            c => c,
+        };
         if ch.is_ascii_alphanumeric() {
             s.push(ch.to_ascii_lowercase());
         } else if !s.ends_with('-') {
@@ -1421,7 +1495,7 @@ impl CyberDesk {
         ui.add_space(10.0);
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
-            let cats: [(Option<Cat>, &str); 7] = [
+            let cats: [(Option<Cat>, &str); 8] = [
                 (None, "TODOS"),
                 (Some(Cat::Esp32), "ESP32"),
                 (Some(Cat::Arduino), "ARDUINO"),
@@ -1429,6 +1503,7 @@ impl CyberDesk {
                 (Some(Cat::Modulo), "MÓDULOS"),
                 (Some(Cat::Energia), "ENERGIA"),
                 (Some(Cat::Pcb), "PCB"),
+                (Some(Cat::Comp), "COMPONENTES"),
             ];
             for (c, label) in cats {
                 let n = match c {
