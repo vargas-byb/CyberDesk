@@ -22,12 +22,5 @@ cargo run --release
 
 ## Gerar o .exe pelo GitHub
 
-- Todo push na `main` compila o app; o `CyberDesk.exe` fica em **Actions → Build CyberDesk → Artifacts**.
-- Para publicar uma Release com o `.exe`:
-
-```
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-O executável é autocontido: quem for usar **não precisa instalar Rust**.
+Todo push na `main` compila o app e publica uma **Release** nova (`v0.2.<build>`) com o `CyberDesk.exe` anexado,
+na aba **Releases** do repositório. O executável é autocontido: quem for usar **não precisa instalar Rust**.
