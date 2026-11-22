@@ -28,7 +28,6 @@ item sem imagem continua usando o desenho animado.
 | Leitor NFC PN532 | `leitor-nfc-pn532.png` |
 | Leitor NFC RC522 | `leitor-nfc-rc522.png` |
 | CYD ESP32 Touch | `cyd-esp32-touch.png` |
-| Antena 2.4 GHz externa | `antena-2-4-ghz-externa.png` |
 | Bateria LiPo 300 mAh | `bateria-lipo-300-mah.png` |
 | Bateria LiPo 400 mAh | `bateria-lipo-400-mah.png` |
 | Bateria LiPo 500 mAh | `bateria-lipo-500-mah.png` |
