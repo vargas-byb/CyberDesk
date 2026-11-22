@@ -1,0 +1,38 @@
+name: Build CyberDesk
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Compilar (release)
+        run: cargo build --release
+
+      - name: Preparar executavel
+        run: Copy-Item target/release/cyberdesk.exe CyberDesk.exe
+
+      - name: Guardar como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: CyberDesk-windows
+          path: CyberDesk.exe
+
+      - name: Publicar na Release (somente em tags v*)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: CyberDesk.exe
