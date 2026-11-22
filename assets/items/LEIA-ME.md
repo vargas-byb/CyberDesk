@@ -36,3 +36,12 @@ item sem imagem continua usando o desenho animado.
 | Bateria LiPo 800 mAh | `bateria-lipo-800-mah.png` |
 | PCB Perfurada | `pcb-perfurada.png` |
 | PCB Customizada | `pcb-customizada.png` |
+| Display IPS 1.28 Redondo GC9A01 | `display-ips-1-28-redondo-gc9a01.png` |
+| Microfone INMP441 I2S | `microfone-inmp441-i2s.png` |
+| Microfone MAX4466 | `microfone-max4466.png` |
+| Sensor de Toque TTP223 | `sensor-de-toque-ttp223.png` |
+| Sensor Ultrassônico HC-SR04 | `sensor-ultrassonico-hc-sr04.png` |
+| Joystick Analógico 5V | `joystick-analogico-5v.png` |
+| Receptor IR VS1838 | `receptor-ir-vs1838.png` |
+| Kit MAX98357 + Alto-falante 40mm | `kit-max98357-alto-falante-40mm.png` |
+| Buzzer | `buzzer.png` |
