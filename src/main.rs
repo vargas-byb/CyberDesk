@@ -1,11 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod auth;
+
 use eframe::egui::emath::easing;
 use eframe::egui::{
-    self, pos2, vec2, Align2, Color32, FontId, Id, Painter, Pos2, Rect, RichText, Sense, Stroke,
+    self, pos2, vec2, Align2, Color32, ColorImage, FontId, Id, LayerId, Order, Painter, Pos2, Rect,
+    RichText, Sense, Stroke, TextureHandle, TextureOptions,
 };
+use include_dir::{include_dir, Dir};
 use std::f32::consts::PI;
 use std::time::Duration;
+
+static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/assets/items");
 
 const CARD_W: f32 = 224.0;
 const CARD_H: f32 = 226.0;
@@ -715,24 +721,114 @@ fn chip(ui: &mut egui::Ui, label: &str, selected: bool) -> bool {
     resp.clicked()
 }
 
-fn card(ui: &mut egui::Ui, it: &Item, idx: usize, order: usize, t0: f64, active: bool) -> bool {
-    let time = ui.input(|i| i.time);
-    let k = (((time - t0) - order as f64 * 0.04) / 0.5).clamp(0.0, 1.0) as f32;
-    let e = easing::cubic_out(k);
-    let (rect, resp) = ui.allocate_exact_size(vec2(CARD_W, CARD_H), Sense::click());
-    if k <= 0.0 {
-        return false;
+fn slug(name: &str) -> String {
+    let mut s = String::new();
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            s.push(ch.to_ascii_lowercase());
+        } else if !s.ends_with('-') {
+            s.push('-');
+        }
     }
-    let hov = ui
-        .ctx()
-        .animate_bool_with_time(resp.id.with("hov"), resp.hovered() || active, 0.18);
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    let r = rect.translate(vec2(0.0, -6.0 * hov + 24.0 * (1.0 - e)));
-    let p = ui.painter().clone();
-    let c = |v: u8| gray(v, e);
+    s.trim_matches('-').to_string()
+}
 
+fn find_image(slug: &str) -> Option<&'static [u8]> {
+    for ext in ["png", "jpg", "jpeg", "webp"] {
+        if let Some(f) = ASSETS.get_file(format!("{slug}.{ext}")) {
+            return Some(f.contents());
+        }
+    }
+    None
+}
+
+fn make_tex(
+    ctx: &egui::Context,
+    name: &str,
+    bytes: &[u8],
+    max: u32,
+    square: bool,
+) -> Option<TextureHandle> {
+    let mut img = image::load_from_memory(bytes).ok()?;
+    if square {
+        let (w, h) = (img.width(), img.height());
+        let s = w.min(h).max(1);
+        img = img.crop_imm((w - s) / 2, (h - s) / 2, s, s);
+    }
+    let img = img.thumbnail(max, max).to_rgba8();
+    let size = [img.width() as usize, img.height() as usize];
+    Some(ctx.load_texture(
+        name,
+        ColorImage::from_rgba_unmultiplied(size, img.as_raw()),
+        TextureOptions::LINEAR,
+    ))
+}
+
+fn paint_img(p: &Painter, area: Rect, tex: &TextureHandle, e: f32, hov: f32) {
+    let panel = area.shrink2(vec2(12.0, 10.0));
+    p.rect_filled(panel, 6.0, gray(244, e));
+    let s = tex.size_vec2();
+    let inner = panel.shrink(6.0);
+    let k = (inner.width() / s.x).min(inner.height() / s.y) * (1.0 + 0.06 * hov);
+    let r = Rect::from_center_size(inner.center(), s * k);
+    p.with_clip_rect(panel).image(
+        tex.id(),
+        r,
+        Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+        gray(255, e),
+    );
+}
+
+fn draw_avatar(p: &Painter, c: Pos2, r: f32, tex: Option<&TextureHandle>, letter: &str, fade: f32) {
+    match tex {
+        Some(t) => {
+            let mut m = egui::Mesh::with_texture(t.id());
+            let col = gray(255, fade);
+            let n = 48u32;
+            m.vertices.push(egui::epaint::Vertex {
+                pos: c,
+                uv: pos2(0.5, 0.5),
+                color: col,
+            });
+            for i in 0..=n {
+                let a = i as f32 / n as f32 * 2.0 * PI;
+                m.vertices.push(egui::epaint::Vertex {
+                    pos: pos2(c.x + r * a.cos(), c.y + r * a.sin()),
+                    uv: pos2(0.5 + 0.5 * a.cos(), 0.5 + 0.5 * a.sin()),
+                    color: col,
+                });
+            }
+            for i in 0..n {
+                m.indices.extend_from_slice(&[0, i + 1, i + 2]);
+            }
+            p.add(egui::Shape::mesh(m));
+        }
+        None => {
+            p.circle_filled(c, r, gray(30, fade));
+            p.text(
+                c,
+                Align2::CENTER_CENTER,
+                letter,
+                FontId::monospace(r * 0.9),
+                gray(240, fade),
+            );
+        }
+    }
+    p.circle_stroke(c, r, st(1.5, gray(235, fade)));
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_card(
+    p: &Painter,
+    r: Rect,
+    it: &Item,
+    idx: usize,
+    hov: f32,
+    time: f64,
+    e: f32,
+    tex: Option<&TextureHandle>,
+) {
+    let c = |v: u8| gray(v, e);
     p.rect_filled(r, 8.0, mix(c(8), c(20), hov));
     p.rect_stroke(r, 8.0, Stroke::new(1.0 + 0.8 * hov, mix(c(55), c(255), hov)));
 
@@ -749,14 +845,11 @@ fn card(ui: &mut egui::Ui, it: &Item, idx: usize, order: usize, t0: f64, active:
         p.line_segment([pos2(cx, cy), pos2(cx, cy + dy * bl)], tick);
     }
 
-    draw_icon(
-        &p,
-        Rect::from_min_size(r.min, vec2(CARD_W, ICON_H)),
-        it.icon,
-        hov,
-        time,
-        e,
-    );
+    let area = Rect::from_min_size(r.min, vec2(CARD_W, ICON_H));
+    match tex {
+        Some(t) => paint_img(p, area, t, e, hov),
+        None => draw_icon(p, area, it.icon, hov, time, e),
+    }
     p.line_segment(
         [
             pos2(r.left() + 14.0, r.top() + ICON_H),
@@ -792,6 +885,77 @@ fn card(ui: &mut egui::Ui, it: &Item, idx: usize, order: usize, t0: f64, active:
         FontId::monospace(11.0),
         c(95),
     );
+}
+
+/// Retorna o retângulo do card se ele foi clicado.
+fn card(
+    ui: &mut egui::Ui,
+    it: &Item,
+    idx: usize,
+    order: usize,
+    t0: f64,
+    active: bool,
+    tex: Option<&TextureHandle>,
+) -> Option<Rect> {
+    let time = ui.input(|i| i.time);
+    let k = (((time - t0) - order as f64 * 0.04) / 0.5).clamp(0.0, 1.0) as f32;
+    let e = easing::cubic_out(k);
+    let (rect, resp) = ui.allocate_exact_size(vec2(CARD_W, CARD_H), Sense::click());
+    if k <= 0.0 || active {
+        return None;
+    }
+    let hov = ui
+        .ctx()
+        .animate_bool_with_time(resp.id.with("hov"), resp.hovered(), 0.18);
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let r = rect.translate(vec2(0.0, -6.0 * hov + 24.0 * (1.0 - e)));
+    paint_card(ui.painter(), r, it, idx, hov, time, e, tex);
+    if resp.clicked() {
+        Some(rect)
+    } else {
+        None
+    }
+}
+
+fn big_button(ui: &mut egui::Ui, label: &str, w: f32, fade: f32) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, 44.0), Sense::click());
+    let hov = ui
+        .ctx()
+        .animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.2);
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let p = ui.painter();
+    p.rect_stroke(rect, 4.0, st(1.5, gray(235, fade)));
+    let fw = rect.width() * easing::cubic_out(hov);
+    let filled = Rect::from_min_size(rect.min, vec2(fw, rect.height()));
+    p.rect_filled(filled, 4.0, gray(245, fade));
+    let font = FontId::monospace(15.0);
+    p.text(rect.center(), Align2::CENTER_CENTER, label, font.clone(), gray(240, fade));
+    p.with_clip_rect(filled)
+        .text(rect.center(), Align2::CENTER_CENTER, label, font, Color32::BLACK);
+    resp.clicked()
+}
+
+fn menu_item(ui: &mut egui::Ui, label: &str, w: f32) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, 36.0), Sense::click());
+    let hov = ui
+        .ctx()
+        .animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.15);
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    let p = ui.painter();
+    p.rect_filled(rect, 3.0, mix(Color32::from_gray(8), Color32::WHITE, hov));
+    p.text(
+        rect.left_center() + vec2(12.0 + 4.0 * hov, 0.0),
+        Align2::LEFT_CENTER,
+        label,
+        FontId::monospace(13.0),
+        mix(Color32::from_gray(220), Color32::BLACK, hov),
+    );
     resp.clicked()
 }
 
@@ -824,46 +988,406 @@ fn draw_background(ctx: &egui::Context, time: f64) {
 
 // ───────────────────────────── App ─────────────────────────────
 
+#[derive(PartialEq, Clone, Copy)]
+enum Mode {
+    Login,
+    Register,
+}
+
+struct Sel {
+    idx: usize,
+    rect: Rect,
+    t0: f64,
+}
+
 struct CyberDesk {
+    store: auth::Store,
+    user: Option<String>,
+    mode: Mode,
+    f_user: String,
+    f_pass: String,
+    f_pass2: String,
+    err: Option<(String, f64)>,
+    fails: u32,
+    locked_until: f64,
+    pending_avatar: Option<(Vec<u8>, TextureHandle)>,
+    avatar: Option<TextureHandle>,
+    menu_open: bool,
+    login_t0: f64,
     cat: Option<Cat>,
     query: String,
     last_key: (Option<Cat>, String),
     grid_t0: f64,
+    sel: Option<Sel>,
     open: bool,
-    shown: Option<usize>,
-    open_t0: f64,
+    imgs: Vec<Option<TextureHandle>>,
 }
 
-impl Default for CyberDesk {
-    fn default() -> Self {
-        Self {
-            cat: None,
-            query: String::new(),
-            last_key: (None, String::new()),
-            grid_t0: 0.9,
-            open: false,
-            shown: None,
-            open_t0: 0.0,
-        }
-    }
+fn typed_title(t: f64) -> String {
+    let full = "CYBERDESK";
+    let n = ((t.max(0.0) * 12.0) as usize).min(full.len());
+    let cursor = if n < full.len() || (t * 2.0) as i64 % 2 == 0 {
+        "_"
+    } else {
+        ""
+    };
+    format!("{}{}", &full[..n], cursor)
 }
 
 impl CyberDesk {
+    fn new(ctx: &egui::Context) -> Self {
+        let imgs = ITEMS
+            .iter()
+            .map(|it| {
+                let s = slug(it.name);
+                find_image(&s).and_then(|b| make_tex(ctx, &format!("item-{s}"), b, 512, false))
+            })
+            .collect();
+        Self {
+            store: auth::Store::load(),
+            user: None,
+            mode: Mode::Login,
+            f_user: String::new(),
+            f_pass: String::new(),
+            f_pass2: String::new(),
+            err: None,
+            fails: 0,
+            locked_until: 0.0,
+            pending_avatar: None,
+            avatar: None,
+            menu_open: false,
+            login_t0: 0.0,
+            cat: None,
+            query: String::new(),
+            last_key: (None, String::new()),
+            grid_t0: 0.0,
+            sel: None,
+            open: false,
+            imgs,
+        }
+    }
+
+    fn fail(&mut self, msg: &str, time: f64) {
+        self.err = Some((msg.to_string(), time));
+    }
+
+    fn load_avatar(&mut self, ctx: &egui::Context) {
+        self.avatar = self.user.as_ref().and_then(|u| {
+            self.store
+                .avatar_bytes(u)
+                .and_then(|b| make_tex(ctx, &format!("avatar-{u}"), &b, 256, true))
+        });
+    }
+
+    fn apply_avatar(&mut self, ctx: &egui::Context, bytes: Vec<u8>, time: f64) {
+        if bytes.len() > 20 * 1024 * 1024 {
+            self.fail("Imagem muito grande (máx. 20 MB)", time);
+            return;
+        }
+        if let Some(u) = self.user.clone() {
+            match self.store.set_avatar(&u, &bytes) {
+                Ok(()) => self.load_avatar(ctx),
+                Err(e) => self.fail(&e, time),
+            }
+        } else if self.mode == Mode::Register {
+            match make_tex(ctx, "avatar-pending", &bytes, 256, true) {
+                Some(t) => {
+                    self.err = None;
+                    self.pending_avatar = Some((bytes, t));
+                }
+                None => self.fail("Imagem inválida", time),
+            }
+        }
+    }
+
+    fn pick_file(&mut self, ctx: &egui::Context, time: f64) {
+        let file = rfd::FileDialog::new()
+            .add_filter("Imagem", &["png", "jpg", "jpeg", "webp"])
+            .pick_file();
+        if let Some(path) = file {
+            match std::fs::read(&path) {
+                Ok(b) => self.apply_avatar(ctx, b, time),
+                Err(_) => self.fail("Não foi possível ler o arquivo", time),
+            }
+        }
+    }
+
+    fn submit(&mut self, ctx: &egui::Context, time: f64) {
+        if time < self.locked_until {
+            let s = (self.locked_until - time).ceil() as i32;
+            self.fail(&format!("Muitas tentativas. Aguarde {s}s"), time);
+            return;
+        }
+        let result = match self.mode {
+            Mode::Login => self.store.login(&self.f_user, &self.f_pass),
+            Mode::Register => {
+                if self.f_pass != self.f_pass2 {
+                    Err("As senhas não coincidem".to_string())
+                } else {
+                    match self.store.register(&self.f_user, &self.f_pass) {
+                        Ok(name) => {
+                            if let Some((bytes, _)) = &self.pending_avatar {
+                                let _ = self.store.set_avatar(&name, bytes);
+                            }
+                            Ok(name)
+                        }
+                        Err(e) => Err(e),
+                    }
+                }
+            }
+        };
+        match result {
+            Ok(name) => {
+                self.user = Some(name);
+                self.f_user.clear();
+                self.f_pass.clear();
+                self.f_pass2.clear();
+                self.err = None;
+                self.fails = 0;
+                self.pending_avatar = None;
+                self.mode = Mode::Login;
+                self.login_t0 = time;
+                self.grid_t0 = time;
+                self.load_avatar(ctx);
+            }
+            Err(e) => {
+                if self.mode == Mode::Login {
+                    self.fails += 1;
+                    if self.fails >= 5 {
+                        self.fails = 0;
+                        self.locked_until = time + 30.0;
+                        self.fail("Muitas tentativas. Aguarde 30s", time);
+                        return;
+                    }
+                }
+                self.fail(&e, time);
+            }
+        }
+    }
+
+    fn logout(&mut self, time: f64) {
+        self.user = None;
+        self.avatar = None;
+        self.menu_open = false;
+        self.open = false;
+        self.sel = None;
+        self.mode = Mode::Login;
+        self.err = None;
+        self.login_t0 = time;
+    }
+
+    // ───── Tela de login / cadastro ─────
+    fn login_screen(&mut self, ctx: &egui::Context, time: f64) {
+        let e = easing::cubic_out(((time - self.login_t0) / 0.9).clamp(0.0, 1.0) as f32);
+        let shake = self
+            .err
+            .as_ref()
+            .map(|(_, t0)| {
+                let k = ((time - *t0) / 0.5) as f32;
+                if k < 1.0 {
+                    (k * 40.0).sin() * 10.0 * (1.0 - k)
+                } else {
+                    0.0
+                }
+            })
+            .unwrap_or(0.0);
+        let mut do_submit = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+        let mut pick = false;
+        let mut switch = false;
+
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().fill(Color32::BLACK))
+            .show(ctx, |ui| {
+                draw_background(ui.ctx(), time);
+                let w = 380.0;
+                let reg = self.mode == Mode::Register;
+                let h = if reg { 660.0 } else { 470.0 };
+                let area = ui.max_rect();
+                let rect = Rect::from_center_size(
+                    area.center() + vec2(shake, (1.0 - e) * 30.0),
+                    vec2(w, h),
+                );
+                ui.allocate_new_ui(
+                    egui::UiBuilder::new()
+                        .max_rect(rect)
+                        .layout(egui::Layout::top_down(egui::Align::Center)),
+                    |ui| {
+                        ui.add_space(6.0);
+                        ui.label(
+                            RichText::new(typed_title(time - self.login_t0))
+                                .monospace()
+                                .size(40.0)
+                                .color(gray(255, e)),
+                        );
+                        ui.label(
+                            RichText::new(if reg {
+                                "// criar conta local"
+                            } else {
+                                "// acesso restrito · login local"
+                            })
+                            .monospace()
+                            .size(13.0)
+                            .color(gray(150, e)),
+                        );
+                        ui.add_space(18.0);
+
+                        if reg {
+                            let (ar, resp) =
+                                ui.allocate_exact_size(vec2(100.0, 100.0), Sense::click());
+                            let hv = ui
+                                .ctx()
+                                .animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.2);
+                            if resp.hovered() {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                            }
+                            let ctr = ar.center();
+                            let p = ui.painter();
+                            match &self.pending_avatar {
+                                Some((_, tex)) => draw_avatar(p, ctr, 42.0, Some(tex), "", e),
+                                None => {
+                                    p.circle_filled(ctr, 42.0, gray(14, e));
+                                    p.text(
+                                        ctr,
+                                        Align2::CENTER_CENTER,
+                                        "+",
+                                        FontId::monospace(34.0),
+                                        gray(200, e),
+                                    );
+                                }
+                            }
+                            let segs = 24;
+                            for i in 0..segs {
+                                let a0 = i as f32 / segs as f32 * 2.0 * PI
+                                    + time as f32 * (0.3 + 1.5 * hv);
+                                arc(p, ctr, 47.0 + 2.0 * hv, a0, a0 + 0.16, st(1.5, gray(200, e)));
+                            }
+                            if resp.clicked() {
+                                pick = true;
+                            }
+                            ui.label(
+                                RichText::new("foto de perfil (opcional) · clique ou arraste")
+                                    .monospace()
+                                    .size(11.5)
+                                    .color(gray(130, e)),
+                            );
+                            ui.add_space(12.0);
+                        }
+
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.f_user)
+                                .hint_text("usuário")
+                                .font(FontId::monospace(15.0))
+                                .margin(vec2(10.0, 9.0))
+                                .desired_width(w),
+                        );
+                        ui.add_space(10.0);
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.f_pass)
+                                .password(true)
+                                .hint_text("senha")
+                                .font(FontId::monospace(15.0))
+                                .margin(vec2(10.0, 9.0))
+                                .desired_width(w),
+                        );
+                        if reg {
+                            ui.add_space(10.0);
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.f_pass2)
+                                    .password(true)
+                                    .hint_text("confirmar senha")
+                                    .font(FontId::monospace(15.0))
+                                    .margin(vec2(10.0, 9.0))
+                                    .desired_width(w),
+                            );
+                        }
+
+                        ui.add_space(8.0);
+                        let msg = match &self.err {
+                            Some((m, _)) => format!("! {m}"),
+                            None if reg => "// senha: mínimo 6 caracteres".to_string(),
+                            None => String::new(),
+                        };
+                        let is_err = self.err.is_some();
+                        ui.label(
+                            RichText::new(msg)
+                                .monospace()
+                                .size(12.5)
+                                .color(gray(if is_err { 255 } else { 120 }, e)),
+                        );
+                        ui.add_space(8.0);
+
+                        let label = if reg { "CRIAR CONTA" } else { "ENTRAR" };
+                        if big_button(ui, label, w, e) {
+                            do_submit = true;
+                        }
+                        ui.add_space(14.0);
+                        let toggle = if reg {
+                            "já tenho conta · entrar"
+                        } else {
+                            "não tenho conta · criar agora"
+                        };
+                        let r = ui.add(
+                            egui::Label::new(
+                                RichText::new(toggle)
+                                    .monospace()
+                                    .size(13.0)
+                                    .color(gray(180, e))
+                                    .underline(),
+                            )
+                            .sense(Sense::click()),
+                        );
+                        if r.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if r.clicked() {
+                            switch = true;
+                        }
+                    },
+                );
+            });
+
+        // arrastar imagem por cima da janela
+        if ctx.input(|i| !i.raw.hovered_files.is_empty()) && self.mode == Mode::Register {
+            let p = ctx.layer_painter(LayerId::new(Order::Foreground, Id::new("drop")));
+            let r = ctx.screen_rect().shrink(14.0);
+            p.rect_filled(r, 8.0, Color32::from_black_alpha(190));
+            p.rect_stroke(r, 8.0, st(2.0, Color32::WHITE));
+            p.text(
+                r.center(),
+                Align2::CENTER_CENTER,
+                "SOLTE A IMAGEM AQUI",
+                FontId::monospace(22.0),
+                Color32::WHITE,
+            );
+        }
+
+        if pick {
+            self.pick_file(ctx, time);
+        }
+        if switch {
+            self.mode = if self.mode == Mode::Login {
+                Mode::Register
+            } else {
+                Mode::Login
+            };
+            self.err = None;
+            self.f_pass.clear();
+            self.f_pass2.clear();
+        }
+        if do_submit {
+            self.submit(ctx, time);
+        }
+    }
+
+    // ───── Catálogo ─────
     fn content(&mut self, ui: &mut egui::Ui, time: f64) {
-        // Título com efeito de digitação + glitch ocasional
+        let tt = time - self.login_t0;
         let (tr, _) = ui.allocate_exact_size(vec2(ui.available_width(), 56.0), Sense::hover());
         let p = ui.painter().clone();
-        let full = "CYBERDESK";
-        let n = ((time * 12.0) as usize).min(full.len());
-        let cursor = if n < full.len() || (time * 2.0) as i64 % 2 == 0 {
-            "_"
-        } else {
-            ""
-        };
-        let txt = format!("{}{}", &full[..n], cursor);
+        let txt = typed_title(tt);
         let pos = pos2(tr.left(), tr.center().y);
         let font = FontId::monospace(44.0);
-        if n == full.len() && (time % 6.0) < 0.16 {
+        if tt > 1.2 && (time % 6.0) < 0.16 {
             p.text(pos + vec2(4.0, -2.0), Align2::LEFT_CENTER, &txt, font.clone(), Color32::from_gray(110));
             p.text(pos + vec2(-3.0, 2.0), Align2::LEFT_CENTER, &txt, font.clone(), Color32::from_gray(60));
         }
@@ -877,13 +1401,12 @@ impl CyberDesk {
         );
         ui.add_space(10.0);
         let (lr, _) = ui.allocate_exact_size(vec2(ui.available_width(), 2.0), Sense::hover());
-        let k = easing::cubic_out(((time - 0.2) / 1.4).clamp(0.0, 1.0) as f32);
+        let k = easing::cubic_out(((tt - 0.2) / 1.4).clamp(0.0, 1.0) as f32);
         ui.painter().line_segment(
             [lr.left_center(), pos2(lr.left() + lr.width() * k, lr.center().y)],
             Stroke::new(1.5, Color32::WHITE),
         );
 
-        // Busca
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             ui.label(RichText::new(">").monospace().size(18.0));
@@ -895,7 +1418,6 @@ impl CyberDesk {
             );
         });
 
-        // Categorias
         ui.add_space(10.0);
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
@@ -919,7 +1441,6 @@ impl CyberDesk {
             }
         });
 
-        // Filtro + reinício da animação de entrada quando muda
         let key = (self.cat, self.query.clone());
         if key != self.last_key {
             self.grid_t0 = time;
@@ -948,8 +1469,13 @@ impl CyberDesk {
         ui.add_space(8.0);
 
         let t0 = self.grid_t0;
-        let (open, shown) = (self.open, self.shown);
-        let mut clicked: Option<usize> = None;
+        let active_idx = if self.open {
+            self.sel.as_ref().map(|s| s.idx)
+        } else {
+            None
+        };
+        let imgs = &self.imgs;
+        let mut clicked: Option<(usize, Rect)> = None;
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
@@ -965,65 +1491,198 @@ impl CyberDesk {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = vec2(18.0, 18.0);
                     for (order, &idx) in list.iter().enumerate() {
-                        let active = open && shown == Some(idx);
-                        if card(ui, &ITEMS[idx], idx, order, t0, active) {
-                            clicked = Some(idx);
+                        let active = active_idx == Some(idx);
+                        if let Some(r) = card(
+                            ui,
+                            &ITEMS[idx],
+                            idx,
+                            order,
+                            t0,
+                            active,
+                            imgs[idx].as_ref(),
+                        ) {
+                            clicked = Some((idx, r));
                         }
                     }
                 });
                 ui.add_space(24.0);
             });
-        if let Some(i) = clicked {
-            self.shown = Some(i);
+        if let Some((idx, rect)) = clicked {
+            self.sel = Some(Sel { idx, rect, t0: time });
             self.open = true;
-            self.open_t0 = time;
+            self.menu_open = false;
         }
     }
 
-    fn detail_panel(&mut self, ctx: &egui::Context, time: f64) {
-        let t = ctx.animate_bool_with_time(Id::new("panel_t"), self.open, 0.4);
-        let Some(idx) = self.shown else { return };
+    // ───── Perfil (canto superior direito) ─────
+    fn profile_chip(&mut self, ctx: &egui::Context, time: f64) {
+        let Some(name) = self.user.clone() else { return };
+        let mut toggle = false;
+        let mut change_photo = false;
+        let mut logout = false;
+        let letter = name.chars().next().unwrap_or('?').to_uppercase().to_string();
+        let avatar = self.avatar.clone();
+        let tt = ((time - self.login_t0) / 0.8).clamp(0.0, 1.0) as f32;
+        let e = easing::cubic_out(tt);
+
+        egui::Area::new(Id::new("profile_chip"))
+            .order(Order::Middle)
+            .anchor(Align2::RIGHT_TOP, vec2(-32.0, 22.0))
+            .show(ctx, |ui| {
+                let w = 60.0 + name.len() as f32 * 8.5;
+                let (rect, resp) = ui.allocate_exact_size(vec2(w, 44.0), Sense::click());
+                let hv = ctx.animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.15);
+                if resp.hovered() {
+                    ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                let p = ui.painter();
+                p.rect_filled(rect, 22.0, mix(gray(8, e), gray(26, e), hv));
+                p.rect_stroke(rect, 22.0, st(1.0, mix(gray(70, e), gray(255, e), hv)));
+                draw_avatar(
+                    p,
+                    pos2(rect.left() + 22.0, rect.center().y),
+                    17.0,
+                    avatar.as_ref(),
+                    &letter,
+                    e,
+                );
+                p.text(
+                    pos2(rect.left() + 48.0, rect.center().y),
+                    Align2::LEFT_CENTER,
+                    &name,
+                    FontId::monospace(14.0),
+                    gray(240, e),
+                );
+                if resp.clicked() {
+                    toggle = true;
+                }
+            });
+
+        let mt = ctx.animate_bool_with_time(Id::new("menu_t"), self.menu_open, 0.18);
+        if mt > 0.0 {
+            egui::Area::new(Id::new("profile_menu"))
+                .order(Order::Middle)
+                .anchor(Align2::RIGHT_TOP, vec2(-32.0, 74.0 - 8.0 * (1.0 - mt)))
+                .show(ctx, |ui| {
+                    egui::Frame::none()
+                        .fill(gray(6, mt))
+                        .stroke(st(1.0, gray(200, mt)))
+                        .rounding(6.0)
+                        .inner_margin(egui::Margin::same(6.0))
+                        .show(ui, |ui| {
+                            if menu_item(ui, "TROCAR FOTO", 190.0) {
+                                change_photo = true;
+                            }
+                            if menu_item(ui, "SAIR", 190.0) {
+                                logout = true;
+                            }
+                        });
+                });
+        }
+
+        if toggle {
+            self.menu_open = !self.menu_open;
+        }
+        if change_photo {
+            self.menu_open = false;
+            self.pick_file(ctx, time);
+        }
+        if logout {
+            self.logout(time);
+        }
+    }
+
+    // ───── Botão destacado + popup ao lado + fundo fosco ─────
+    fn spotlight(&mut self, ctx: &egui::Context, time: f64) {
+        let t = ctx.animate_bool_with_time(Id::new("panel_t"), self.open, 0.35);
+        let Some(sel) = &self.sel else { return };
         if t <= 0.0 {
             return;
         }
+        let (idx, card_rect, t0) = (sel.idx, sel.rect, sel.t0);
         let it = &ITEMS[idx];
-        let e = easing::cubic_in_out(t);
+        let e = easing::cubic_out(t);
         let screen = ctx.screen_rect();
-        let w = 420.0_f32.min(screen.width() * 0.92);
-        let x = screen.right() - w * e;
-
-        // Fundo escurecido: clicar fora fecha o painel
         let mut close = false;
+
+        // 1) fundo escurecido e "fosco" (clicar fora fecha)
         egui::Area::new(Id::new("dim"))
-            .order(egui::Order::Middle)
+            .order(Order::Foreground)
             .fixed_pos(screen.min)
             .constrain(false)
             .show(ctx, |ui| {
                 let (r, resp) = ui.allocate_exact_size(screen.size(), Sense::click());
-                ui.painter()
-                    .rect_filled(r, 0.0, Color32::from_black_alpha((190.0 * e) as u8));
+                let p = ui.painter();
+                p.rect_filled(r, 0.0, Color32::from_black_alpha((205.0 * e) as u8));
+                let line = Color32::from_white_alpha((9.0 * e) as u8);
+                let mut y = r.top();
+                while y < r.bottom() {
+                    p.line_segment([pos2(r.left(), y), pos2(r.right(), y)], st(1.0, line));
+                    y += 4.0;
+                }
                 if resp.clicked() {
                     close = true;
                 }
             });
 
-        let open_t0 = self.open_t0;
+        // 2) o card selecionado, em destaque, com pulso
+        let spot = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::new("spot_card")));
+        let scaled = card_rect.scale_from_center(1.0 + 0.05 * e);
+        for k in 0..3 {
+            let ph = (((time - t0) * 0.9) as f32 + k as f32 / 3.0) % 1.0;
+            spot.rect_stroke(
+                scaled.expand(4.0 + ph * 26.0),
+                12.0,
+                st(1.2, gray((190.0 * (1.0 - ph) * e) as u8, 1.0)),
+            );
+        }
+        paint_card(&spot, scaled, it, idx, 1.0, time, 1.0, self.imgs[idx].as_ref());
+
+        // 3) popup ao lado do card (direita; se faltar espaço, esquerda)
+        let pw = 350.0_f32;
+        let ph = 310.0_f32;
+        let right = scaled.right() + 22.0 + pw <= screen.right() - 16.0;
+        let base_x = if right {
+            scaled.right() + 22.0
+        } else {
+            scaled.left() - 22.0 - pw
+        };
+        let dir = if right { 1.0 } else { -1.0 };
+        let x = base_x - dir * 48.0 * (1.0 - e);
+        let y = scaled
+            .top()
+            .clamp(16.0, (screen.bottom() - ph - 16.0).max(16.0));
+
+        // conector animado entre o card e o popup
+        let cy = scaled.center().y.clamp(y + 20.0, y + ph - 20.0);
+        let (ax, bx) = if right {
+            (scaled.right(), base_x)
+        } else {
+            (scaled.left(), base_x + pw)
+        };
+        let bx_now = ax + (bx - ax) * e;
+        spot.line_segment([pos2(ax, cy), pos2(bx_now, cy)], st(1.5, gray(235, e)));
+        let dot = ax + (bx_now - ax) * (((time * 0.8) % 1.0) as f32);
+        spot.circle_filled(pos2(dot, cy), 3.0, gray(255, e));
+
+        let sel_t0 = t0;
         egui::Area::new(Id::new("detail"))
-            .order(egui::Order::Foreground)
-            .fixed_pos(pos2(x, screen.top()))
+            .order(Order::Tooltip)
+            .fixed_pos(pos2(x, y))
             .constrain(false)
             .show(ctx, |ui| {
                 let c = |v: u8| gray(v, e);
                 egui::Frame::none()
-                    .fill(Color32::from_gray(5))
-                    .stroke(Stroke::new(1.0, c(210)))
-                    .inner_margin(egui::Margin::same(24.0))
+                    .fill(c(5))
+                    .stroke(st(1.0, c(220)))
+                    .rounding(8.0)
+                    .inner_margin(egui::Margin::same(20.0))
                     .show(ui, |ui| {
-                        ui.set_width(w - 48.0);
-                        ui.set_min_height(screen.height() - 48.0);
+                        ui.set_width(pw - 40.0);
+                        ui.set_min_height(ph - 40.0);
 
-                        // barra superior com X desenhado
-                        let (bar, _) = ui.allocate_exact_size(vec2(w - 48.0, 26.0), Sense::hover());
+                        let (bar, _) =
+                            ui.allocate_exact_size(vec2(pw - 40.0, 24.0), Sense::hover());
                         ui.painter().text(
                             bar.left_center(),
                             Align2::LEFT_CENTER,
@@ -1031,7 +1690,10 @@ impl CyberDesk {
                             FontId::monospace(12.0),
                             c(130),
                         );
-                        let xr = Rect::from_center_size(bar.right_center() - vec2(12.0, 0.0), vec2(26.0, 26.0));
+                        let xr = Rect::from_center_size(
+                            bar.right_center() - vec2(12.0, 0.0),
+                            vec2(24.0, 24.0),
+                        );
                         let resp = ui.interact(xr, Id::new("close_x"), Sense::click());
                         let hv = ctx.animate_bool_with_time(Id::new("close_h"), resp.hovered(), 0.12);
                         if resp.hovered() {
@@ -1040,20 +1702,19 @@ impl CyberDesk {
                         let xc = mix(c(150), c(255), hv);
                         let d = 6.0 + 2.0 * hv;
                         let ctr = xr.center();
-                        ui.painter().line_segment([ctr + vec2(-d, -d), ctr + vec2(d, d)], Stroke::new(1.8, xc));
-                        ui.painter().line_segment([ctr + vec2(-d, d), ctr + vec2(d, -d)], Stroke::new(1.8, xc));
+                        ui.painter().line_segment([ctr + vec2(-d, -d), ctr + vec2(d, d)], st(1.8, xc));
+                        ui.painter().line_segment([ctr + vec2(-d, d), ctr + vec2(d, -d)], st(1.8, xc));
                         if resp.clicked() {
                             close = true;
                         }
 
-                        // título + linha animada
-                        ui.add_space(14.0);
-                        ui.label(RichText::new(it.name).size(30.0).strong().color(c(255)));
-                        let (ln, _) = ui.allocate_exact_size(vec2(w - 48.0, 3.0), Sense::hover());
-                        let lk = easing::cubic_out(((time - open_t0) / 0.7).clamp(0.0, 1.0) as f32);
+                        ui.add_space(10.0);
+                        ui.label(RichText::new(it.name).size(26.0).strong().color(c(255)));
+                        let (ln, _) = ui.allocate_exact_size(vec2(pw - 40.0, 3.0), Sense::hover());
+                        let lk = easing::cubic_out(((time - sel_t0) / 0.7).clamp(0.0, 1.0) as f32);
                         ui.painter().line_segment(
                             [ln.left_center(), pos2(ln.left() + ln.width() * lk, ln.center().y)],
-                            Stroke::new(2.0, c(255)),
+                            st(2.0, c(255)),
                         );
                         ui.add_space(6.0);
                         ui.label(
@@ -1062,29 +1723,13 @@ impl CyberDesk {
                                 .size(12.0)
                                 .color(c(150)),
                         );
-                        ui.add_space(14.0);
-
-                        // ícone grande, sempre animado
-                        let (ir, _) = ui.allocate_exact_size(vec2(w - 48.0, 200.0), Sense::hover());
-                        let p = ui.painter().clone();
-                        p.rect_filled(ir, 8.0, c(10));
-                        p.rect_stroke(ir, 8.0, Stroke::new(1.0, c(60)));
-                        draw_icon(&p, ir, it.icon, 1.0, time, e);
-
-                        ui.add_space(16.0);
-                        ui.label(RichText::new(it.chip).monospace().size(12.5).color(c(170)));
                         ui.add_space(12.0);
-                        ui.label(RichText::new(it.desc).size(15.5).color(c(220)));
-
-                        ui.painter().text(
-                            pos2(x + 24.0, screen.bottom() - 30.0),
-                            Align2::LEFT_CENTER,
-                            "ESC para fechar",
-                            FontId::monospace(11.5),
-                            c(100),
-                        );
+                        ui.label(RichText::new(it.chip).monospace().size(12.0).color(c(170)));
+                        ui.add_space(10.0);
+                        ui.label(RichText::new(it.desc).size(15.0).color(c(220)));
                     });
             });
+
         if close {
             self.open = false;
         }
@@ -1095,8 +1740,34 @@ impl eframe::App for CyberDesk {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let time = ctx.input(|i| i.time);
         ctx.request_repaint_after(Duration::from_millis(16));
+
+        // imagem de perfil por arrastar e soltar
+        let dropped = ctx.input(|i| i.raw.dropped_files.clone());
+        for f in dropped {
+            let bytes = if let Some(b) = &f.bytes {
+                Some(b.to_vec())
+            } else if let Some(p) = &f.path {
+                std::fs::read(p).ok()
+            } else {
+                None
+            };
+            if let Some(b) = bytes {
+                self.apply_avatar(ctx, b, time);
+                break;
+            }
+        }
+
+        if self.user.is_none() {
+            self.login_screen(ctx, time);
+            return;
+        }
+
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.open = false;
+            if self.menu_open {
+                self.menu_open = false;
+            } else {
+                self.open = false;
+            }
         }
 
         egui::CentralPanel::default()
@@ -1110,7 +1781,8 @@ impl eframe::App for CyberDesk {
                 self.content(ui, time);
             });
 
-        self.detail_panel(ctx, time);
+        self.profile_chip(ctx, time);
+        self.spotlight(ctx, time);
     }
 }
 
@@ -1134,7 +1806,8 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1240.0, 780.0])
             .with_min_inner_size([760.0, 520.0])
-            .with_title("CyberDesk"),
+            .with_title("CyberDesk")
+            .with_drag_and_drop(true),
         ..Default::default()
     };
     eframe::run_native(
@@ -1142,7 +1815,7 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|cc| {
             setup_style(&cc.egui_ctx);
-            Ok(Box::new(CyberDesk::default()))
+            Ok(Box::new(CyberDesk::new(&cc.egui_ctx)))
         }),
     )
 }

@@ -5,9 +5,14 @@ Feito em Rust com [egui](https://github.com/emilk/egui), visual preto e branco.
 
 ## Como usar
 
-- Clique em qualquer card para abrir o painel lateral com nome e descrição.
-- `ESC` ou clique fora do painel para fechar.
-- Use a busca e os filtros de categoria no topo.
+- Crie uma conta local (usuário + senha, com foto de perfil opcional) e entre. Os dados ficam só neste PC (senha com hash Argon2).
+- Clique em um card: ele fica em destaque, o fundo escurece e o popup abre ao lado dele.
+- `ESC` ou clique fora para fechar. Use a busca e os filtros no topo.
+- Foto de perfil: clique no seu nome (canto superior direito) → TROCAR FOTO, ou arraste uma imagem para a janela.
+
+## Imagens dos itens
+
+Coloque as imagens em `assets/items/` (nomes em `assets/items/LEIA-ME.md`). Elas são embutidas no `.exe`.
 
 ## Rodar localmente
 
