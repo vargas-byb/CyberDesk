@@ -244,13 +244,6 @@ const ITEMS: &[Item] = &[
         chip: "ESP32-2432S028R · TFT 2.8\" 320x240 · touch",
         desc: "Cheap Yellow Display: ESP32 com tela touch colorida, slot microSD, LED RGB e sensor de luz numa placa só. Queridinho da comunidade para dashboards e ferramentas portáteis.",
     },
-    Item {
-        name: "Antena 2.4 GHz externa",
-        cat: Cat::Modulo,
-        icon: Icon::Antenna,
-        chip: "Conector IPEX / U.FL · 2.4 GHz",
-        desc: "Antena externa para placas ESP32 com conector U.FL. Melhora o alcance de Wi-Fi e Bluetooth em relação à antena impressa da placa.",
-    },
     // ── Energia ──
     Item {
         name: "Bateria LiPo 300 mAh",
