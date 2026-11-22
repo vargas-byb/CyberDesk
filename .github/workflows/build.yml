@@ -3,6 +3,8 @@ name: Build CyberDesk
 on:
   push:
     branches: [main]
+  # em Pull Requests só compila e testa (não publica Release)
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -18,6 +20,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Testes
+        run: cargo test --release
+
       - name: Compilar (release)
         run: cargo build --release
 
@@ -30,12 +35,13 @@ jobs:
           name: CyberDesk-windows
           path: CyberDesk.exe
 
-      # Toda versao nova que passa no build vira uma Release (v0.2.<numero do build>)
+      # Toda versao nova que passa no build vira uma Release (v0.4.<numero do build>)
       - name: Publicar Release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.2.${{ github.run_number }}
-          name: CyberDesk v0.2.${{ github.run_number }}
+          tag_name: v0.4.${{ github.run_number }}
+          name: CyberDesk v0.4.${{ github.run_number }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           make_latest: true

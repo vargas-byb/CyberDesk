@@ -1,26 +1,54 @@
 # CyberDesk
 
-Catálogo animado de hardware para cibersegurança: ESP32, Arduino, displays, módulos NFC, CYD, antenas, baterias e PCBs.
-Feito em Rust com [egui](https://github.com/emilk/egui), visual preto e branco.
+Catálogo animado de hardware para cibersegurança: ESP32, Arduino, displays, módulos NFC, CYD, baterias, PCBs e componentes.
+Feito em Rust com [egui](https://github.com/emilk/egui) — visual escuro, rápido e sem dependências: o `.exe` é autocontido.
 
-## Como usar
+## O que o app faz
 
-- Crie uma conta local (usuário + senha, com foto de perfil opcional) e entre. Os dados ficam só neste PC (senha com hash Argon2).
-- Clique em um card: ele fica em destaque, o fundo escurece e o popup abre ao lado dele.
-- `ESC` ou clique fora para fechar. Use a busca e os filtros no topo.
-- Foto de perfil: clique no seu nome (canto superior direito) → TROCAR FOTO, ou arraste uma imagem para a janela.
+- **Entra e já fica logado.** Marque *Manter conectado neste computador* (vem marcado) e, ao fechar e abrir o app de novo, você continua logado. A sessão vale por 90 dias a partir do último uso (renova a cada abertura). Ao clicar em **Sair da conta**, a sessão salva é apagada. O último usuário também fica preenchido na tela de login.
+- **Conta local e segura.** Usuário + senha, com foto de perfil opcional. Tudo fica só neste PC; a senha é guardada com hash Argon2 e a sessão salva usa um token aleatório (só o hash dele é guardado).
+- **Catálogo com 39 itens**, cada um com resumo, descrição, especificações, nível de dificuldade, usos comuns, **dica de bancada** e **itens relacionados** (clique para pular entre eles).
+- **Favoritos** por usuário (estrela no card ou tecla `F`).
+- **Busca inteligente** (ignora acentos; procura em nome, chip, descrição e usos) + filtros por categoria + ordenação (padrão, A–Z, nível).
+- **Painel de detalhes** ao lado do card, com navegação ◀ ▶ entre os itens, copiar ficha e favoritar.
+- **Animações e interações**: abertura animada, fundo com partículas e luz que segue o mouse, login em duas colunas com trilhas de circuito animadas, animação de "acesso concedido", cards com parallax e brilho, faíscas ao favoritar, busca com sugestões digitadas, botão de voltar ao topo, avisos (toasts) com barra de tempo, contadores animados, medidor de força de senha, arrastar e soltar a foto de perfil.
+
+## Atalhos
+
+| Tecla | Ação |
+|---|---|
+| `/` ou `Ctrl+F` | Focar a busca |
+| `←` `→` | Item anterior / próximo (com o painel aberto) |
+| `F` | Favoritar / desfavoritar (com o painel aberto) |
+| `ESC` | Fecha menu, painel ou limpa a busca |
+| `Enter` (login) | Avança para o próximo campo; envia ao terminar |
+
+## Onde ficam os dados
+
+Em `%APPDATA%\CyberDesk` (Windows): `users.json` (contas), `session.json` (sessão salva), `favorites.json` e a pasta `avatars/`.
+Para "esquecer" este computador, basta usar **Sair da conta** ou apagar `session.json`.
 
 ## Imagens dos itens
 
 Coloque as imagens em `assets/items/` (nomes em `assets/items/LEIA-ME.md`). Elas são embutidas no `.exe`.
+Item sem imagem usa um desenho animado feito em código.
+
+## Ícone do app
+
+`assets/icon/` guarda o ícone (`icon.png`, `icon-1024.png` e `cyberdesk.ico`). O `.ico` é embutido no `CyberDesk.exe` no build do Windows (`build.rs`) e o `icon.png` é usado na janela e na tela de abertura.
 
 ## Rodar localmente
 
 ```
 cargo run --release
+cargo test    # testes do login salvo
 ```
 
 ## Gerar o .exe pelo GitHub
 
-Todo push na `main` compila o app e publica uma **Release** nova (`v0.2.<build>`) com o `CyberDesk.exe` anexado,
+Todo push na `main` compila o app e publica uma **Release** nova (`v0.4.<build>`) com o `CyberDesk.exe` anexado,
 na aba **Releases** do repositório. O executável é autocontido: quem for usar **não precisa instalar Rust**.
+
+## Fontes
+
+[Inter](https://github.com/rsms/inter) e [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono), ambas sob a licença SIL OFL 1.1.
