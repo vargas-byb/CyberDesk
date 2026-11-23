@@ -2,6 +2,8 @@
 fn main() {
     println!("cargo:rerun-if-changed=assets/icon/cyberdesk.ico");
     println!("cargo:rerun-if-changed=build.rs");
+    // número do build (vem do workflow do GitHub); o app usa para saber se há versão nova
+    println!("cargo:rerun-if-env-changed=CYBERDESK_BUILD");
 
     #[cfg(windows)]
     {

@@ -13,6 +13,8 @@ Feito em Rust com [egui](https://github.com/emilk/egui) — visual escuro, rápi
 - **Painel de detalhes** ao lado do card, com navegação ◀ ▶ entre os itens, copiar ficha e favoritar.
 - **Animações e interações**: abertura animada, fundo com partículas e luz que segue o mouse, login em duas colunas com trilhas de circuito animadas, animação de "acesso concedido", cards com parallax e brilho, faíscas ao favoritar, busca com sugestões digitadas, botão de voltar ao topo, avisos (toasts) com barra de tempo, contadores animados, medidor de força de senha, arrastar e soltar a foto de perfil.
 
+- **Atualização dentro do app.** No canto inferior direito há um botão de atualização. A cada abertura (e a cada 30 min) o app consulta a última Release do GitHub; se houver versão nova, aparece uma **bolinha amarela** no botão e um aviso. Ao clicar em **ATUALIZAR**, o app baixa o novo `CyberDesk.exe` (conferindo tamanho e SHA-256), troca o executável e reabre sozinho. Seus dados em `%APPDATA%\CyberDesk` não são tocados.
+
 ## Atalhos
 
 | Tecla | Ação |
@@ -48,6 +50,7 @@ cargo test    # testes do login salvo
 
 Todo push na `main` compila o app e publica uma **Release** nova (`v0.4.<build>`) com o `CyberDesk.exe` anexado,
 na aba **Releases** do repositório. O executável é autocontido: quem for usar **não precisa instalar Rust**.
+O número do build (`<build>`) é gravado dentro do `.exe` na compilação (variável `CYBERDESK_BUILD`); é com ele que o app descobre se existe versão mais nova. Builds locais (`cargo run`) não têm esse número e não se atualizam sozinhos.
 
 ## Fontes
 

@@ -3,6 +3,7 @@
 mod auth;
 mod data;
 mod icons;
+mod updater;
 mod util;
 mod widgets;
 
@@ -14,13 +15,15 @@ use eframe::egui::{
 };
 use include_dir::{include_dir, Dir};
 use std::f32::consts::PI;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 use std::time::Duration;
 use util::*;
 use widgets::*;
 
 static ASSETS: Dir = include_dir!("$CARGO_MANIFEST_DIR/assets/items");
 const LOGO_PNG: &[u8] = include_bytes!("../assets/icon/icon.png");
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const CARD_W: f32 = 224.0;
 const CARD_H: f32 = 244.0;
@@ -421,6 +424,22 @@ struct Pending {
     t0: f64,
 }
 
+/// Estado do botão de atualização.
+#[derive(Clone)]
+enum Upd {
+    Idle,
+    Checking,
+    Available(updater::Release),
+    Downloading,
+    Latest,
+    Failed,
+}
+
+enum UpMsg {
+    Checked(Result<updater::Release, String>),
+    Failed(String),
+}
+
 struct CyberDesk {
     screen: Screen,
     boot_t0: f64,
@@ -463,6 +482,14 @@ struct CyberDesk {
     scroll_to: Option<usize>,
     favs: Vec<String>,
     toasts: Vec<Toast>,
+
+    upd: Upd,
+    upd_manual: bool,
+    upd_inflight: bool,
+    upd_checked: Option<f64>,
+    upd_progress: Arc<AtomicU32>,
+    upd_tx: Sender<UpMsg>,
+    upd_rx: Receiver<UpMsg>,
 }
 
 fn typed_title(t: f64) -> String {
@@ -503,6 +530,7 @@ impl CyberDesk {
         let restored = store.restore_session();
         let last_user = store.last_user().unwrap_or_default();
         let prefilled = !last_user.is_empty();
+        let (upd_tx, upd_rx) = channel();
         Self {
             screen: Screen::Splash,
             boot_t0: 0.0,
@@ -543,6 +571,124 @@ impl CyberDesk {
             scroll_to: None,
             favs: Vec::new(),
             toasts: Vec::new(),
+            upd: Upd::Idle,
+            upd_manual: false,
+            upd_inflight: false,
+            upd_checked: None,
+            upd_progress: Arc::new(AtomicU32::new(0)),
+            upd_tx,
+            upd_rx,
+        }
+    }
+
+    // ───── Atualização pelo GitHub ─────
+    fn start_check(&mut self, manual: bool, time: f64) {
+        if self.upd_inflight {
+            // já tem uma consulta automática rodando: só passa a mostrar o resultado
+            if manual {
+                self.upd_manual = true;
+                self.upd = Upd::Checking;
+            }
+            return;
+        }
+        self.upd_inflight = true;
+        self.upd_manual = manual;
+        self.upd_checked = Some(time);
+        if manual {
+            self.upd = Upd::Checking;
+        }
+        let tx = self.upd_tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(UpMsg::Checked(updater::check()));
+        });
+    }
+
+    fn start_install(&mut self, rel: updater::Release) {
+        self.upd = Upd::Downloading;
+        self.upd_progress.store(0, Ordering::Relaxed);
+        let tx = self.upd_tx.clone();
+        let progress = self.upd_progress.clone();
+        std::thread::spawn(move || match updater::install(&rel, &progress) {
+            // novo app já foi aberto: este fecha
+            Ok(()) => std::process::exit(0),
+            Err(e) => {
+                let _ = tx.send(UpMsg::Failed(e));
+            }
+        });
+    }
+
+    fn update_clicked(&mut self, time: f64) {
+        match self.upd.clone() {
+            Upd::Available(rel) => self.start_install(rel),
+            Upd::Checking | Upd::Downloading => {}
+            _ => self.start_check(true, time),
+        }
+    }
+
+    /// Recebe os resultados das threads e refaz a consulta sozinho a cada 30 min.
+    fn poll_update(&mut self, time: f64) {
+        while let Ok(msg) = self.upd_rx.try_recv() {
+            match msg {
+                UpMsg::Checked(res) => {
+                    self.upd_inflight = false;
+                    let manual = std::mem::take(&mut self.upd_manual);
+                    if matches!(self.upd, Upd::Downloading) {
+                        continue;
+                    }
+                    match res {
+                        Ok(rel) if updater::is_newer(rel.build) => {
+                            let novo = !matches!(&self.upd, Upd::Available(r) if r.build == rel.build);
+                            if novo {
+                                self.toast(
+                                    format!("Atualização v{} disponível · clique em ATUALIZAR", rel.version()),
+                                    GOLD,
+                                    time,
+                                );
+                            }
+                            self.upd = Upd::Available(rel);
+                        }
+                        Ok(_) => {
+                            self.upd = Upd::Latest;
+                            if manual {
+                                self.toast("Você já está na versão mais recente", OK, time);
+                            }
+                        }
+                        Err(e) => {
+                            if manual {
+                                self.toast(format!("Não deu para verificar: {e}"), DANGER, time);
+                                self.upd = Upd::Failed;
+                            } else if matches!(self.upd, Upd::Checking) {
+                                self.upd = Upd::Idle;
+                            }
+                        }
+                    }
+                }
+                UpMsg::Failed(e) => {
+                    self.toast(format!("Falha ao atualizar: {e}"), DANGER, time);
+                    self.upd = Upd::Failed;
+                }
+            }
+        }
+        let due = self.upd_checked.map_or(true, |t| time - t > 1800.0);
+        if due && !self.upd_inflight && matches!(self.upd, Upd::Idle | Upd::Latest | Upd::Failed) {
+            self.start_check(false, time);
+        }
+    }
+
+    /// Texto, cor, bolinha amarela e "ocupado" do botão de atualização.
+    fn upd_look(&self) -> (String, Color32, bool, bool) {
+        match &self.upd {
+            Upd::Idle => ("VERIFICAR ATUALIZAÇÃO".into(), MUTED, false, false),
+            Upd::Checking => ("VERIFICANDO...".into(), MUTED, false, true),
+            Upd::Available(r) => (format!("ATUALIZAR · v{}", r.version()), GOLD, true, false),
+            Upd::Downloading => (
+                format!("BAIXANDO {}%", self.upd_progress.load(Ordering::Relaxed)),
+                ACCENT,
+                false,
+                true,
+            ),
+            Upd::Latest => ("APP ATUALIZADO".into(), OK, false, false),
+            Upd::Failed => ("TENTAR DE NOVO".into(), DANGER, false, false),
         }
     }
 
@@ -912,7 +1058,7 @@ impl CyberDesk {
                 p.text(
                     pos2(c.x, r.bottom() - 28.0),
                     Align2::CENTER_CENTER,
-                    format!("v{VERSION} · toque para pular"),
+                    format!("v{} · toque para pular", updater::version_label()),
                     mono(10.5),
                     fc(DIM, fade),
                 );
@@ -1260,7 +1406,7 @@ impl CyberDesk {
                 ui.painter().text(
                     pos2(area.center().x, area.bottom() - 22.0),
                     Align2::CENTER_CENTER,
-                    format!("CyberDesk v{VERSION}"),
+                    format!("CyberDesk v{}", updater::version_label()),
                     mono(10.5),
                     fc(DIM, e),
                 );
@@ -1744,6 +1890,8 @@ impl CyberDesk {
 
     // ───── Rodapé ─────
     fn footer(&mut self, ctx: &egui::Context, time: f64) {
+        let mut upd_click = false;
+        let (ulabel, ucolor, udot, ubusy) = self.upd_look();
         egui::TopBottomPanel::bottom("footer")
             .exact_height(34.0)
             .frame(egui::Frame::none().inner_margin(egui::Margin::symmetric(32.0, 0.0)))
@@ -1773,19 +1921,62 @@ impl CyberDesk {
                     mono(10.5),
                     MUTED,
                 );
-                let hints = if r.width() > 900.0 {
-                    format!("/ buscar    ← → navegar    F favoritar    ESC fechar    v{VERSION}")
+
+                // botão de atualização (canto direito): bolinha amarela = versão nova
+                let ufont = mono(10.5);
+                let tw = ctx.fonts(|f| f.layout_no_wrap(ulabel.clone(), ufont.clone(), Color32::WHITE).size().x);
+                let bw = tw + 28.0 + if udot || ubusy { 14.0 } else { 0.0 };
+                let brect = Rect::from_center_size(pos2(r.right() - bw / 2.0, r.center().y), vec2(bw, 22.0));
+                let resp = ui.interact(brect, Id::new("upd_btn"), Sense::click());
+                let hv = ctx.animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.15);
+                if resp.hovered() && !ubusy {
+                    ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                if resp.clicked() {
+                    upd_click = true;
+                }
+                let strong = if udot { 0.75 } else { 0.35 };
+                p.rect_filled(brect, 11.0, alpha(ucolor, 0.07 + 0.12 * hv));
+                p.rect_stroke(brect, 11.0, st(1.0, mix(LINE, ucolor, strong + 0.25 * hv)));
+                let mut tx = brect.left() + 14.0;
+                if udot {
+                    let dc = pos2(brect.left() + 14.0, brect.center().y);
+                    glow(p, dc, 10.0, GOLD, 0.55 * pulse);
+                    p.circle_filled(dc, 3.5, GOLD);
+                    tx += 14.0;
+                } else if ubusy {
+                    let dc = pos2(brect.left() + 14.0, brect.center().y);
+                    let a0 = time as f32 * 5.0;
+                    arc(p, dc, 4.5, a0, a0 + 4.2, st(1.6, ucolor));
+                    tx += 14.0;
+                }
+                p.text(
+                    pos2(tx, r.center().y),
+                    Align2::LEFT_CENTER,
+                    &ulabel,
+                    ufont,
+                    mix(ucolor, TEXT, 0.5 * hv),
+                );
+
+                let hints = if r.width() > 1000.0 {
+                    format!(
+                        "/ buscar    ← → navegar    F favoritar    ESC fechar    v{}",
+                        updater::version_label()
+                    )
                 } else {
-                    format!("v{VERSION}")
+                    format!("v{}", updater::version_label())
                 };
                 p.text(
-                    pos2(r.right(), r.center().y),
+                    pos2(brect.left() - 16.0, r.center().y),
                     Align2::RIGHT_CENTER,
                     hints,
                     mono(10.5),
                     DIM,
                 );
             });
+        if upd_click {
+            self.update_clicked(time);
+        }
     }
 
     // ───── Toasts ─────
@@ -2440,6 +2631,7 @@ impl eframe::App for CyberDesk {
             Screen::Catalog => {}
         }
 
+        self.poll_update(time);
         self.handle_keys(ctx, time);
         self.footer(ctx, time);
         self.scroll_fab(ctx);
@@ -2473,6 +2665,7 @@ fn app_icon() -> egui::IconData {
 }
 
 fn main() -> eframe::Result<()> {
+    updater::cleanup(); // apaga o .exe antigo que sobrou de uma atualização
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 800.0])
