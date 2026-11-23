@@ -13,6 +13,9 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      # gravado no .exe: o app compara com a última Release para avisar de atualização
+      CYBERDESK_BUILD: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
