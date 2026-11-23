@@ -461,6 +461,21 @@ pub const ITEMS: &[Item] = &[
             "Painéis compactos de status",
         ],
     },
+    Item {
+        name: "Display TFT 2.4 Shield Touch",
+        cat: Cat::Display,
+        icon: Icon::Lcd { rows: 4 },
+        level: Mid,
+        chip: "TFT 2,4\" · 240 x 320 · colorido · touch resistivo · shield para Arduino Uno",
+        tagline: "Tela colorida com touch",
+        desc: "Display TFT colorido de 2,4 polegadas com touch resistivo, no formato shield que encaixa direto no Arduino Uno e no Mega. Acompanha caneta stylus e tem leitor de cartão microSD, servindo para menus, gráficos e pequenas interfaces.",
+        tip: "O shield usa quase todos os pinos do Uno e trabalha em 5 V. Em um ESP32 (3,3 V) é preciso adaptar a fiação e o nível lógico. O touch resistivo pede pressão firme e calibração no código.",
+        uses: &[
+            "Interfaces de toque para projetos",
+            "Menus e painéis de controle",
+            "Gráficos e leituras de sensores em cores",
+        ],
+    },
     // ── Módulos ──
     Item {
         name: "Leitor NFC PN532",

@@ -45,3 +45,4 @@ item sem imagem continua usando o desenho animado.
 | Receptor IR VS1838 | `receptor-ir-vs1838.png` |
 | Kit MAX98357 + Alto-falante 40mm | `kit-max98357-alto-falante-40mm.png` |
 | Buzzer | `buzzer.png` |
+| Display TFT 2.4 Shield Touch | `display-tft-2-4-shield-touch.png` |

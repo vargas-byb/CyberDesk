@@ -7,7 +7,7 @@ Feito em Rust com [egui](https://github.com/emilk/egui) — visual escuro, rápi
 
 - **Entra e já fica logado.** Marque *Manter conectado neste computador* (vem marcado) e, ao fechar e abrir o app de novo, você continua logado. A sessão vale por 90 dias a partir do último uso (renova a cada abertura). Ao clicar em **Sair da conta**, a sessão salva é apagada. O último usuário também fica preenchido na tela de login.
 - **Conta local e segura.** Usuário + senha, com foto de perfil opcional. Tudo fica só neste PC; a senha é guardada com hash Argon2 e a sessão salva usa um token aleatório (só o hash dele é guardado).
-- **Catálogo com 48 itens**, cada um com resumo, descrição, especificações, nível de dificuldade, usos comuns, **dica de bancada** e **itens relacionados** (clique para pular entre eles).
+- **Catálogo com 49 itens**, cada um com resumo, descrição, especificações, nível de dificuldade, usos comuns, **dica de bancada** e **itens relacionados** (clique para pular entre eles).
 - **Favoritos** por usuário (estrela no card ou tecla `F`).
 - **Busca inteligente** (ignora acentos; procura em nome, chip, descrição e usos) + filtros por categoria + ordenação (padrão, A–Z, nível).
 - **Painel de detalhes** ao lado do card, com navegação ◀ ▶ entre os itens, copiar ficha e favoritar.
